@@ -11,11 +11,10 @@ from flask import Flask
 from flask import request
 from flask_restful import Resource
 from flask_restful import Api
-import apic
-import requests
 from login import login
 from apic import Policy
 from apic import Applications
+import json
 
 
 
@@ -25,43 +24,6 @@ api = Api(app)
 
 app.config.from_object(__name__)
 
-
-
-# These legacy API calls retrieve information from the APIC-EM.
-class EventOn(Resource):
-    def get(self):
-        policy_scope = request.args.get('policy')
-        event_status = True
-        req_url = get_dataserv() + "/_get_apps_db/?policy=" + policy_scope
-        saved_apps = requests.get(req_url, verify=False).json()
-        app_list = []
-        for item in saved_apps:
-            app_list.append(item['app'])
-        service_ticket = apic.get_ticket()
-        return apic.put_policy_update(service_ticket,
-                                      apic.update_app_state(service_ticket,
-                                                            event_status,
-                                                            apic.get_policy(service_ticket, policy_scope),
-                                                            app_list),
-                                      policy_scope)
-
-
-class EventOff(Resource):
-    def get(self):
-        policy_scope = request.args.get('policy')
-        event_status = False
-        req_url = get_dataserv() + "/_get_apps_db/?policy=" + policy_scope
-        saved_apps = requests.get(req_url, verify=False).json()
-        app_list = []
-        for item in saved_apps:
-            app_list.append(item['app'])
-        service_ticket = apic.get_ticket()
-        return apic.put_policy_update(service_ticket,
-                                      apic.update_app_state(service_ticket,
-                                                            event_status,
-                                                            apic.get_policy(service_ticket, policy_scope),
-                                                            app_list),
-                                      policy_scope)
 
 
 # Create NbClientManager object for uniq library
@@ -82,8 +44,13 @@ class ApplicationsAPI(Resource):
                 list of applications, 200 status code, access-control header
         """
         applications_object = Applications(client).applications
+
+        # Return only the list of application names
         applications_list = [app.name for app in applications_object.response]
+
+        # Optionally return the entire ApplicationsListResult object in JSON
         # applications_list = [client.serialize(app) for app in applications_object.response]
+
         return applications_list, 200, {'Access-Control-Allow-Origin': '*'}
 
 
@@ -101,8 +68,13 @@ class PolicyTagsAPI(Resource):
                 list of policy tags, 200 status code, access-control header
         """
         policy_tags_object = Policy(client, None).policy_tags
-        policy_tags_list = [tag.PolicyTag for tag in policy_tags_object.response]
+
+        # Return only the list of policy tags
+        policy_tags_list = [tag.policyTag for tag in policy_tags_object.response]
+
+        # Optionally return the entire PolicyTagListResult object in JSON
         # policy_tags_list = [client.serialize(tag) for tag in policy_tags_object.response]
+
         return policy_tags_list, 200, {'Access-Control-Allow-Origin': '*'}
 
 
@@ -121,7 +93,12 @@ class RelevanceAPI(Resource):
         """
         app_name = request.args.get('app')
         policy_tag = request.args.get('policy')
-        return Policy(client, policy_tag).app_relevance(app_name), 200, {'Access-Control-Allow-Origin': '*'}
+        if not app_name:
+            return "Missing Argument: app", 400, {'Access-Control-Allow-Origin': '*'}
+        elif not policy_tag:
+            return "Missing Argument: policy", 400, {'Access-Control-Allow-Origin': '*'}
+        else:
+            return Policy(client, policy_tag).app_relevance(app_name), 200, {'Access-Control-Allow-Origin': '*'}
 
     def post(self):
         """
@@ -138,13 +115,36 @@ class RelevanceAPI(Resource):
             Returns:
                 taskId object (from uniq)
         """
-        app_name = request.form.getlist('app')
-        policy_tag = request.form.getlist('policy')
-        target_relevance = request.form.getlist('relevance')
-        policy_object = Policy(client, policy_tag)
-        policy_object.reset_relevance(app_name, target_relevance)
-        return policy_object.update_apic(), 200, {'Access-Control-Allow-Origin': '*'}
+        app_name = request.form['app']
+        policy_tag = request.form['policy']
+        target_relevance = request.form['relevance']
 
+        if not app_name:
+            return "Missing Form Parameter: app", 400, {'Access-Control-Allow-Origin': '*'}
+        elif not policy_tag:
+            return "Missing Form Parameter: policy", 400, {'Access-Control-Allow-Origin': '*'}
+        elif not target_relevance:
+            return "Missing Form Parameter: relevance", 400, {'Access-Control-Allow-Origin': '*'}
+
+        # Create Policy object
+        policy_object = Policy(client, policy_tag)
+
+        if policy_object.app_relevance(app_name) == target_relevance:
+            # If current relevance is target relevance print and return message
+            message = "Application {} is already in {} policy".format(app_name, target_relevance)
+            print(message)
+            return message, 200, {'Access-Control-Allow-Origin': '*'}
+
+        else:
+            # Execute the change to the application's relevance level
+            policy_object.reset_relevance(app_name, target_relevance)
+
+            # DEBUG printing of output for troubleshooting
+            # with open('file.txt', 'w') as p:
+            #     p.write(json.dumps(client.serialize(policy_object.policy_list.response),indent=4))
+
+            # Update the APIC EM policy via REST API PUT (using uniq wrapper), return taskId response
+            return policy_object.update_apic().response.taskId, 200, {'Access-Control-Allow-Origin': '*'}
 
 
 
