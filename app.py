@@ -15,6 +15,7 @@ from login import login
 from apic import Policy
 from apic import Applications
 import json
+import re
 
 
 
@@ -34,7 +35,10 @@ class ApplicationsAPI(Resource):
             Get applications and returns as list
 
             Usage:
-                http://<url>/api/applications/
+                http://<url>/api/applications/?search=<search string>
+
+            Args:
+                search: application name search query (string)
 
             Returns:
                 list of applications, 200 status code, access-control header
@@ -42,10 +46,19 @@ class ApplicationsAPI(Resource):
         # Create NbClientManager object for uniq library
         client = login()
 
+        try:
+            search = request.args.get('search')
+        except:
+            search = None
+
         applications_object = Applications(client).applications
 
-        # Return only the list of application names
-        applications_list = [app.name for app in applications_object.response]
+        if search:
+            rsearch = re.compile(search, re.IGNORECASE)
+            applications_list = [app.name for app in applications_object.response if rsearch.search(app.name)]
+        else:
+            # Return only the list of application names
+            applications_list = [app.name for app in applications_object.response]
 
         # Optionally return the entire ApplicationsListResult object in JSON
         # applications_list = [client.serialize(app) for app in applications_object.response]
@@ -90,6 +103,10 @@ class RelevanceAPI(Resource):
             Usage:
                 http://<url>/api/relevance/?policy=<policy scope>&app=<app name>
 
+            Args:
+                app_name: Application name (string)
+                policy: Policy Scope
+
             Returns:
                 String representation of relevance level, 200 status code, access-control header
         """
@@ -103,7 +120,10 @@ class RelevanceAPI(Resource):
         elif not policy_tag:
             return "Missing Argument: policy", 400, {'Access-Control-Allow-Origin': '*'}
         else:
-            return Policy(client, policy_tag).app_relevance(app_name), 200, {'Access-Control-Allow-Origin': '*'}
+            relevance = Policy(client, policy_tag).app_relevance(app_name)
+            if not relevance:
+                return "Unable to get relevance level", 204, {'Access-Control-Allow-Origin': '*'}
+            return relevance, 200, {'Access-Control-Allow-Origin': '*'}
 
     def post(self):
         """
@@ -141,7 +161,7 @@ class RelevanceAPI(Resource):
             # If current relevance is target relevance print and return message
             message = "Application {} is already in {} policy".format(app_name, target_relevance)
             print(message)
-            return message, 200, {'Access-Control-Allow-Origin': '*'}
+            return message, 204, {'Access-Control-Allow-Origin': '*'}
 
         else:
             # Execute the change to the application's relevance level
@@ -152,7 +172,10 @@ class RelevanceAPI(Resource):
             #     p.write(json.dumps(client.serialize(policy_object.policy_list.response),indent=4))
 
             # Update the APIC EM policy via REST API PUT (using uniq wrapper), return taskId response
-            return policy_object.update_apic().response.taskId, 200, {'Access-Control-Allow-Origin': '*'}
+            task_id = policy_object.update_apic().response.taskId
+            if task_id:
+                message = "Success: {} set to relevance level {}".format(app_name, target_relevance)
+                return message, 200, {'Access-Control-Allow-Origin': '*'}
 
 
 
