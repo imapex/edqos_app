@@ -24,17 +24,11 @@ as well as a [docker-compose](http://docker.com) script.
 
 Prerequisites
 
-* Python 2.7+
-* [setuptools package](https://pypi.python.org/pypi/setuptools)
-* [Flask](http://flask.pocoo.org)
-* [Requests](http://docs.python-requests.org/en/master/)
-* Hosting environment - any environment capable of hosting multiple containers
-and implementing networking between them. Tested/supported environments are
-currently [mantl](http://mantl.io) and [Docker](http://www.docker.com).
 
-The front end application makes use of [JQuery](http://jquery.com) and [Chosen](https://harvesthq.github.io/chosen/);
-separate installation of these libraries is not required as they are linked from
-public CDN networks.
+* Python 3
+* `pip install -r requirements.txt`
+
+
 
 ## Downloading
 
@@ -43,83 +37,65 @@ Option A:
 If you have git installed, clone the repositories into the same directory.
 
     git clone https://github.com/imapex/edqos_app
-    git clone https://github.com/imapex/edqos_data
-    git clone https://github.com/imapex/edqos_web
-    git clone https://github.com/imapex/edqos_installer (optional)
+
 
 Option B:
 
+If you don't have git, [download a zip copy of the repository](https://github.com/imapex/edqos_app/archive/master.zip)
+and extract.
 
-The latest build of this project is also available as a Docker image from Docker Hub
-
-    docker pull imapex/edqos_app:latest
-    docker pull imapex/edqos_web:latest
-    docker pull imapex/edqos_data:latest
-
-Though in the case of docker installation, the docker-compose script is the simplest
-choice as it correctly instantiates the dependencies between the containers
-and builds networking between them.
 
 
 ## Installing
 
-### Mantl installation
 
-These instructions assume that you have cloned the installation repo as listed
-above.
+### DevNet Mantl Sandbox
+To install the application to the DevNet Mantl Sandbox using the DevNet APIC EM Sandbox:
+1. Set your docker username
+    ```
+    export $DOCKERUSER=<your_username>
+    ```
+2. Execute the following commands
+    ```    
+    cp edqos_sample.json edqos_$DOCKERUSER.json
+    sed -i "" -e "s/DOCKERUSER/$DOCKERUSER/g" edqos_$DOCKERUSER.json
+    curl -k -X POST -u admin:1vtG@lw@y https://mantlsandbox.cisco.com:8080/v2/apps \
+    -H "Content-type: application/json" \
+    -d @edqos_$DOCKERUSER.json \
+    | python -m json.tool
+    ```
 
-* Edit the sample-demoapp.json file (included) to reflect credentials for your
-Cisco APIC-EM installation.
-* Source edqos_setup. This will prompt for temporary environment variables
-needed for the installation.
-* Run the edqos-install.sh script to install the application to your
-[mantl](http://mantl.io) server. This script will also create json files that can
-be used to re-install the application if needed.
+### BYOMantl
+You can modify the sample app definition and commands above to deploy to your own Mantl instance.
 
-### Docker installation
+### Local Deployment
+You can also run the application locally rather than in a container environment by the following:
 
-To quickly bring the application up, type "docker-compose up". This will launch
-the containers in the correct sequence and instantiate the web interface.
-
-Installation into a swarm should work but has not yet been tested.
+```
+python app.py
+```
 
 # Usage
 
-It is required to create a policy in the APIC-EM interface directly and assign
-that policy to network equipment as appropriate. This application cannot
-build a policy from scratch.
+The application provides an API interface for getting QOS information out of APIC EM.
 
-The application provides a web interface for status reporting and configuration.
-That interface will be available after the application is deployed
-at http://0.0.0.0:5000.
-
-The web front-end application presents a configuration interface as well as
-manual toggles that can be clicked to test application functionality. Status
-reporting is included as well.
+The supported APIs are:
+* /api/policy_tags/ - (GET) Responds with list of policy tags available in APIC EM
+* /api/applications/ - (GET) Responds with list of applications known to APIC EM
+    * Optional argument: `search=<string>` Responds with list of applications matching search string
+* /api/relevance/ - (GET) Responds with current relevance level for an application within a given scope
+    * Required argument: `app=<string>` needs exact application name as known by APIC EM
+    * Required argument: `policy=<string>` needs exact policy tag as known by APIC EM
+* /api/relevance/ - (POST) Sets the given application to the given relevance level; takes application/x-www-form-urlencoded data
+    * Required data: `app=<string>` needs exact application name as known by APIC EM 
+    * Required data: `policy=<string>` needs exact policy tag as known by APIC EM
+    * Required data: `relevance=<string>` needs exact relevance level as known by APIC EM
+    ("Business-Relevant", "Default", "Business-Irrelevant")
+    
+    
 
 
 # Development
 
 Development requires access to Cisco's DevNet sandbox APIC-EM server, or a suitable
-on-site installation. The application can be run locally rather than in a container
-environment by the following:
-
-    export FLASK_APP=app.py
-    flask initdb (on first launch to initialize a local database)
-    flask run
-
-
-## Linting
-
-We use flake 8 to lint our code. Please keep the repository clean by running:
-
-    flake8
-
-## Testing
-
-Currently test coverage is lacking for this application.
-
-
-# License
-
-MIT license. See the included [LICENSE.TXT](LICENSE.TXT) file for details.
+on-site installation. Send us a Pull Request with suggested changes.
